@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>極速心算 - Canvas 版</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f8fafc;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden; /* 防止手機端滑動 */
+      touch-action: none; /* 禁用預設觸控行為，提升遊戲手感 */
+    }
+    canvas {
+      background-color: #ffffff;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      border-radius: 24px;
+      max-width: 100%;
+      max-height: 100vh;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // 設定內部解析度與縮放，確保在高解析度螢幕上不模糊
+  const WIDTH = 400;
+  const HEIGHT = 700;
+  
+  function resizeCanvas() {
+    const scale = Math.min(window.innerWidth / WIDTH, window.innerHeight / HEIGHT);
+    // 留一點邊距
+    const finalScale = scale > 1 ? 1 : scale * 0.95; 
+    
+    canvas.style.width = `${WIDTH * finalScale}px`;
+    canvas.style.height = `${HEIGHT * finalScale}px`;
+    
+    // 處理 Retina 螢幕
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = WIDTH * dpr;
+    canvas.height = HEIGHT * dpr;
+    ctx.scale(dpr, dpr);
+  }
+
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // --- 遊戲狀態管理 ---
+  let state = 'menu'; // 'menu', 'playing', 'gameover'
+  let difficulty = 'medium';
+  let score = 0;
+  let timeLeft = 30; // 固定為 30 秒
+  let streak = 0;
+  let maxStreak = 0;
+  let correctCount = 0; // 新增：答對題數紀錄
+  let question = null;
+  let userInput = '';
+  let highScore = localStorage.getItem('mathDashCanvasHighScore') || 0;
+  
+  // 動畫與時間控制
+  let lastTime = performance.now();
+  let feedback = null; // 'correct', 'wrong'
+  let feedbackTimer = 0;
+  let cursorBlink = 0;
+
+  // 互動按鈕紀錄
+  let activeButtons = [];
+
+  // --- 顏色主題 ---
+  const colors = {
+    bg: '#ffffff',
+    textMain: '#1e293b',
+    textMuted: '#64748b',
+    primary: '#4f46e5',
+    primaryHover: '#4338ca',
+    success: '#10b981',
+    successBg: '#ecfdf5',
+    danger: '#f43f5e',
+    dangerBg: '#fff1f2',
+    warning: '#f59e0b',
+    warningBg: '#fffbeb',
+    surface: '#f1f5f9',
+    surfaceHover: '#e2e8f0'
+  };
+
+  // --- 題目生成邏輯 ---
+  function generateQuestion(diff) {
+    let num1, num2, operator, answer;
+    const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+    if (diff === 'easy') {
+      operator = Math.random() > 0.5 ? '+' : '-';
+      if (operator === '+') {
+        num1 = rand(1, 15); num2 = rand(1, 15); answer = num1 + num2;
+      } else {
+        num1 = rand(5, 20); num2 = rand(1, num1); answer = num1 - num2;
+      }
+    } else if (diff === 'medium') {
+      const ops = ['+', '-', '*'];
+      operator = ops[rand(0, 2)];
+      if (operator === '+') {
+        num1 = rand(10, 89); num2 = rand(10, 89); answer = num1 + num2;
+      } else if (operator === '-') {
+        num1 = rand(20, 99); num2 = rand(10, num1); answer = num1 - num2;
+      } else {
+        num1 = rand(2, 9); num2 = rand(2, 9); answer = num1 * num2;
+      }
+    } else {
+      const ops = ['+', '-', '*', '/'];
+      operator = ops[rand(0, 3)];
+      if (operator === '+') {
+        num1 = rand(100, 499); num2 = rand(100, 499); answer = num1 + num2;
+      } else if (operator === '-') {
+        num1 = rand(200, 999); num2 = rand(50, num1); answer = num1 - num2;
+      } else if (operator === '*') {
+        num1 = rand(11, 25); num2 = rand(5, 15); answer = num1 * num2;
+      } else {
+        num2 = rand(3, 20); answer = rand(5, 40); num1 = num2 * answer;
+      }
+    }
+    return { answer: answer.toString(), text: `${num1} ${operator.replace('*', '×').replace('/', '÷')} ${num2}` };
+  }
+
+  // --- 輔助繪圖函數 ---
+  function drawRoundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
+  }
+
+  function registerButton(id, x, y, w, h) {
+    activeButtons.push({ id, x, y, w, h });
+  }
+
+  // --- 繪製畫面 ---
+  function drawMenu() {
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    // 標題
+    ctx.fillStyle = colors.primary;
+    ctx.font = 'bold 40px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('極速心算', WIDTH / 2, 150);
+    
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = '16px sans-serif';
+    ctx.fillText('每天訓練大腦 30 秒，讓思路更敏捷！', WIDTH / 2, 190);
+
+    // 按鈕
+    const btnWidth = 300;
+    const btnHeight = 70;
+    const startY = 280;
+    const gap = 20;
+
+    const modes = [
+      { id: 'easy', text: '簡單 (20以內加減)', color: colors.successBg, textCol: colors.success },
+      { id: 'medium', text: '中等 (兩位數混合)', color: colors.warningBg, textCol: colors.warning },
+      { id: 'hard', text: '困難 (三位數混合)', color: colors.dangerBg, textCol: colors.danger }
+    ];
+
+    modes.forEach((mode, index) => {
+      const y = startY + index * (btnHeight + gap);
+      drawRoundRect(ctx, (WIDTH - btnWidth)/2, y, btnWidth, btnHeight, 16, mode.color);
+      
+      ctx.fillStyle = mode.textCol;
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(mode.text, WIDTH / 2, y + btnHeight / 2);
+      
+      registerButton(`start_${mode.id}`, (WIDTH - btnWidth)/2, y, btnWidth, btnHeight);
+    });
+
+    // 新增：計分說明
+    const ruleY = startY + modes.length * (btnHeight + gap) + 10;
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('計分說明：簡單 10分 / 中等 20分 / 困難 40分', WIDTH / 2, ruleY);
+    ctx.fillStyle = colors.warning;
+    ctx.fillText('連續答對可獲得額外的連勝加分！', WIDTH / 2, ruleY + 22);
+
+    if (highScore > 0) {
+      ctx.fillStyle = colors.primary;
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(`🏆 最高分：${highScore}`, WIDTH / 2, ruleY + 65);
+    }
+  }
+
+  function drawPlaying() {
+    // 處理震動與背景顏色
+    let shakeX = 0;
+    if (feedbackTimer > 0) {
+      if (feedback === 'correct') {
+        ctx.fillStyle = colors.successBg;
+      } else if (feedback === 'wrong') {
+        ctx.fillStyle = colors.dangerBg;
+        shakeX = Math.sin(performance.now() * 0.05) * 8; // 震動效果
+      }
+    } else {
+      ctx.fillStyle = colors.bg;
+    }
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    // 頂部資訊列 - 分數
+    ctx.fillStyle = colors.surface;
+    drawRoundRect(ctx, 15, 20, 75, 36, 10, colors.surface);
+    ctx.fillStyle = colors.primary;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`⭐ ${score}`, 52.5, 38);
+
+    // 新增：頂部資訊列 - 答對題數
+    drawRoundRect(ctx, 95, 20, 55, 36, 10, colors.surface);
+    ctx.fillStyle = colors.success;
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`✅ ${correctCount}`, 122.5, 38);
+
+    if (streak > 2) {
+      ctx.fillStyle = colors.warning;
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`🔥 ${streak} 連勝`, 155, 38);
+    }
+
+    // 退出按鈕
+    drawRoundRect(ctx, WIDTH - 70, 20, 50, 36, 10, colors.dangerBg);
+    ctx.fillStyle = colors.danger;
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('退出', WIDTH - 45, 38);
+    registerButton('quit', WIDTH - 70, 20, 50, 36);
+
+    const timeColor = timeLeft <= 10 ? colors.danger : colors.textMain;
+    ctx.fillStyle = timeColor;
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`⏱ ${Math.ceil(timeLeft)}s`, WIDTH - 80, 38);
+
+    // 進度條
+    drawRoundRect(ctx, 20, 70, WIDTH - 40, 8, 4, colors.surface);
+    const progressWidth = Math.max(0, (WIDTH - 40) * (timeLeft / 30));
+    drawRoundRect(ctx, 20, 70, progressWidth, 8, 4, timeColor);
+
+    // 題目 (加上震動偏移)
+    ctx.save();
+    ctx.translate(shakeX, 0);
+    
+    // 將題目區域向上移動 (從 200 調整為 180)
+    ctx.fillStyle = colors.textMain;
+    ctx.font = 'bold 64px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(question.text, WIDTH / 2, 180);
+
+    // 將輸入框向上移動 (從 280 調整為 250)
+    ctx.fillStyle = colors.primary;
+    ctx.font = 'bold 54px sans-serif';
+    let displayInput = userInput || '?';
+    ctx.fillText(displayInput, WIDTH / 2, 250);
+    
+    // 將底線向上移動
+    const textWidth = ctx.measureText(displayInput).width;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#c7d2fe'; // 淺藍色底線
+    ctx.beginPath();
+    ctx.moveTo(WIDTH / 2 - Math.max(textWidth / 2, 40), 265);
+    ctx.lineTo(WIDTH / 2 + Math.max(textWidth / 2, 40), 265);
+    ctx.stroke();
+
+    // 將游標向上移動
+    if (!userInput && cursorBlink % 1000 < 500) {
+      ctx.fillStyle = colors.primary;
+      ctx.fillRect(WIDTH / 2 + textWidth/2 + 5, 210, 4, 45);
+    } else if (userInput && cursorBlink % 1000 < 500) {
+        ctx.fillStyle = colors.primary;
+        ctx.fillRect(WIDTH / 2 + textWidth/2 + 5, 210, 4, 45);
+    }
+
+    ctx.restore();
+
+    // 繪製數字鍵盤 (將起始 Y 軸從 360 向上拉升至 310)
+    const padY = 310;
+    const btnW = 100;
+    const btnH = 60;
+    const gap = 15;
+    const startX = (WIDTH - (btnW * 3 + gap * 2)) / 2;
+
+    const keys = [
+      ['1', '2', '3'],
+      ['4', '5', '6'],
+      ['7', '8', '9'],
+      ['C', '0', '⌫']
+    ];
+
+    keys.forEach((row, rIdx) => {
+      row.forEach((key, cIdx) => {
+        const x = startX + cIdx * (btnW + gap);
+        const y = padY + rIdx * (btnH + gap);
+        
+        const isAction = key === 'C' || key === '⌫';
+        drawRoundRect(ctx, x, y, btnW, btnH, 12, isAction ? colors.surface : colors.bg, colors.surfaceHover);
+        
+        ctx.fillStyle = isAction ? colors.textMuted : colors.textMain;
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(key, x + btnW / 2, y + btnH / 2 + 2);
+
+        registerButton(`key_${key}`, x, y, btnW, btnH);
+      });
+    });
+
+    // Enter 按鈕
+    const enterY = padY + 4 * (btnH + gap);
+    drawRoundRect(ctx, startX, enterY, btnW * 3 + gap * 2, btnH + 10, 16, userInput ? colors.primary : colors.surfaceHover);
+    ctx.fillStyle = userInput ? '#ffffff' : colors.textMuted;
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText('確認 (Enter)', WIDTH / 2, enterY + (btnH + 10) / 2);
+    registerButton('enter', startX, enterY, btnW * 3 + gap * 2, btnH + 10);
+  }
+
+  function drawGameOver() {
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    ctx.fillStyle = colors.textMain;
+    ctx.font = 'bold 40px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('時間到！', WIDTH / 2, 120);
+
+    // 結算看板 (稍微加高以容納新資訊)
+    const boardY = 170;
+    const boardW = 320;
+    const boardH = 240;
+    drawRoundRect(ctx, (WIDTH - boardW)/2, boardY, boardW, boardH, 20, colors.surface);
+
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = colors.textMuted;
+    ctx.textAlign = 'left';
+    ctx.fillText('本次得分', WIDTH/2 - 130, boardY + 40);
+    ctx.fillText('答對題數', WIDTH/2 - 130, boardY + 95);
+    ctx.fillText('最高連勝', WIDTH/2 - 130, boardY + 150);
+    ctx.fillText('歷史最高', WIDTH/2 - 130, boardY + 205);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = colors.primary;
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillText(score.toString(), WIDTH/2 + 130, boardY + 40);
+    
+    // 新增：結算畫面的答對題數
+    ctx.fillStyle = colors.success;
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(`${correctCount} 題`, WIDTH/2 + 130, boardY + 95);
+
+    ctx.fillStyle = colors.warning;
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(`🔥 ${maxStreak}`, WIDTH/2 + 130, boardY + 150);
+
+    ctx.fillStyle = colors.textMain;
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(Math.max(score, highScore).toString(), WIDTH/2 + 130, boardY + 205);
+
+    // 按鈕 (稍微往下移動避免重疊)
+    const btnW = 280;
+    const btnH = 60;
+    
+    // 再玩一次
+    drawRoundRect(ctx, (WIDTH - btnW)/2, 440, btnW, btnH, 16, colors.primary);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🔄 再玩一次', WIDTH / 2, 470);
+    registerButton('restart', (WIDTH - btnW)/2, 440, btnW, btnH);
+
+    // 回主畫面
+    drawRoundRect(ctx, (WIDTH - btnW)/2, 520, btnW, btnH, 16, colors.bg, colors.surfaceHover);
+    ctx.fillStyle = colors.textMuted;
+    ctx.fillText('🏠 回主選單', WIDTH / 2, 550);
+    registerButton('home', (WIDTH - btnW)/2, 520, btnW, btnH);
+  }
+
+  // --- 遊戲迴圈 ---
+  function gameLoop(timestamp) {
+    const deltaTime = timestamp - lastTime;
+    lastTime = timestamp;
+    cursorBlink += deltaTime;
+
+    activeButtons = []; // 清空可點擊區域
+
+    if (state === 'playing') {
+      if (timeLeft > 0) {
+        timeLeft -= deltaTime / 1000;
+        if (timeLeft <= 0) {
+          timeLeft = 0;
+          state = 'gameover';
+          if (score > highScore) {
+            highScore = score;
+            localStorage.setItem('mathDashCanvasHighScore', highScore);
+          }
+        }
+      }
+      if (feedbackTimer > 0) {
+        feedbackTimer -= deltaTime;
+      }
+      drawPlaying();
+    } else if (state === 'menu') {
+      drawMenu();
+    } else if (state === 'gameover') {
+      drawGameOver();
+    }
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  // --- 邏輯處理 ---
+  function startGame(diff) {
+    difficulty = diff;
+    score = 0;
+    timeLeft = 30; // 固定為 30 秒
+    streak = 0;
+    maxStreak = 0;
+    correctCount = 0; // 重置答對題數
+    userInput = '';
+    question = generateQuestion(diff);
+    feedbackTimer = 0;
+    state = 'playing';
+  }
+
+  function handleInput(val) {
+    if (state !== 'playing') return;
+    if (val === 'C') {
+      userInput = '';
+    } else if (val === '⌫') {
+      userInput = userInput.slice(0, -1);
+    } else if (userInput.length < 6) {
+      userInput += val;
+    }
+  }
+
+  function checkAnswer() {
+    if (state !== 'playing' || !userInput) return;
+
+    if (userInput === question.answer) {
+      // 答對
+      const basePoints = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 20 : 40;
+      const bonus = Math.min(streak * 2, 20);
+      score += basePoints + bonus;
+      streak++;
+      maxStreak = Math.max(maxStreak, streak);
+      correctCount++; // 紀錄答對題數
+      
+      feedback = 'correct';
+      feedbackTimer = 300;
+      question = generateQuestion(difficulty);
+      userInput = '';
+    } else {
+      // 答錯
+      streak = 0;
+      feedback = 'wrong';
+      feedbackTimer = 400;
+      userInput = '';
+    }
+  }
+
+  // --- 互動事件監聽 ---
+  function handleTouch(e) {
+    if (e.type === 'touchstart') e.preventDefault(); // 防止手機端滑動或縮放，mousedown 時不需 prevent
+    // 支援滑鼠點擊與觸控
+    const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+
+    const rect = canvas.getBoundingClientRect();
+    // 計算相對於 Canvas 內部坐標系的點擊位置
+    const scaleX = canvas.width / rect.width / (window.devicePixelRatio || 1);
+    const scaleY = canvas.height / rect.height / (window.devicePixelRatio || 1);
+    
+    const x = (clientX - rect.left) * scaleX;
+    const y = (clientY - rect.top) * scaleY;
+
+    // 檢查點擊了哪個按鈕
+    for (const btn of activeButtons) {
+      if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+        if (btn.id.startsWith('start_')) {
+          startGame(btn.id.split('_')[1]);
+        } else if (btn.id.startsWith('key_')) {
+          handleInput(btn.id.split('_')[1]);
+        } else if (btn.id === 'enter') {
+          checkAnswer();
+        } else if (btn.id === 'restart') {
+          startGame(difficulty);
+        } else if (btn.id === 'home' || btn.id === 'quit') {
+          state = 'menu';
+        }
+        break; // 點到一個就停止檢查
+      }
+    }
+  }
+
+  canvas.addEventListener('mousedown', handleTouch);
+  canvas.addEventListener('touchstart', handleTouch, { passive: false });
+
+  // 實體鍵盤支援
+  window.addEventListener('keydown', (e) => {
+    if (state !== 'playing') return;
+    if (e.key >= '0' && e.key <= '9') {
+      handleInput(e.key);
+    } else if (e.key === 'Backspace') {
+      handleInput('⌫');
+    } else if (e.key === 'Enter') {
+      checkAnswer();
+    } else if (e.key === 'Escape') {
+      handleInput('C');
+    }
+  });
+
+  // 啟動遊戲
+  requestAnimationFrame(gameLoop);
+
+</script>
+</body>
+</html>
