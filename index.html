@@ -8,7 +8,7 @@
     body {
       margin: 0;
       padding: 0;
-      background-color: #f1f5f9; /* 外層背景改為較深的灰藍，突顯中間的畫布 */
+      background-color: #f1f5f9;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -52,11 +52,11 @@
   resizeCanvas();
 
   // --- 遊戲狀態與過渡管理 ---
-  let state = 'menu';
-  let sceneOffsetX = 0; // 用於滑動轉場特效
+  let state = 'menu'; // 'menu', 'ready', 'playing', 'gameover'
+  let sceneOffsetX = 0; 
   let difficulty = 'medium';
   let score = 0;
-  let displayScore = 0; // 用於結算畫面的數字滾動
+  let displayScore = 0; 
   let timeLeft = 30;
   let streak = 0;
   let maxStreak = 0;
@@ -64,7 +64,7 @@
   let question = null;
   let userInput = '';
   let highScore = localStorage.getItem('mathDashCanvasHighScore') || 0;
-  let activePressId = null; // 紀錄當前按下的按鈕 (3D微動效)
+  let activePressId = null; 
   
   // 動畫與時間控制
   let lastTime = performance.now();
@@ -73,7 +73,7 @@
   let cursorBlink = 0;
   let activeButtons = [];
 
-  // 題目彈跳動畫 (Spring physics)
+  // 題目彈跳動畫 
   let qScale = 1;
   let qScaleVel = 0;
 
@@ -97,23 +97,28 @@
     particleColors: ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6']
   };
 
+  const difficultyTextMap = {
+    'easy': '簡單 (20以內加減)',
+    'medium': '中等 (兩位數混合)',
+    'hard': '困難 (三位數混合)'
+  };
+
   // --- 視覺特效元件 (VFX) ---
   let particles = [];
   let floatingTexts = [];
   let bgSymbols = [];
 
-  // 初始化背景飄浮數學符號
   const symbolsList = ['+', '-', '×', '÷', '=', '∞', '∑', 'π', '√'];
-  for(let i=0; i<25; i++) { // 數量從 15 增加到 25
+  for(let i=0; i<25; i++) {
     bgSymbols.push({
       x: Math.random() * WIDTH,
       y: Math.random() * HEIGHT,
       text: symbolsList[Math.floor(Math.random() * symbolsList.length)],
-      vy: -Math.random() * 0.5 - 0.2, // 稍微加快飄動速度
+      vy: -Math.random() * 0.5 - 0.2, 
       rot: Math.random() * Math.PI * 2,
       vrot: (Math.random() - 0.5) * 0.015,
-      size: Math.random() * 40 + 30, // 尺寸變大 (30 ~ 70px)
-      alpha: Math.random() * 0.08 + 0.04 // 透明度提高，變得更明顯 (4% ~ 12%)
+      size: Math.random() * 40 + 30, 
+      alpha: Math.random() * 0.08 + 0.04 
     });
   }
 
@@ -184,15 +189,14 @@
     }
   }
 
-  // 狀態切換附帶滑滑轉場
   function changeState(newState) {
     state = newState;
-    sceneOffsetX = WIDTH; // 新場景從右側滑入
+    sceneOffsetX = WIDTH; 
   }
 
   function triggerQuestionBounce() {
-    qScale = 0.3;     // 初始縮小
-    qScaleVel = 0;    // 速度歸零
+    qScale = 0.3;     
+    qScaleVel = 0;    
   }
 
   // --- 題目生成邏輯 ---
@@ -230,24 +234,22 @@
         num2 = rand(3, 20); answer = rand(5, 40); num1 = num2 * answer;
       }
     }
-    triggerQuestionBounce(); // 每次產生新題目時觸發彈跳動畫
+    triggerQuestionBounce(); 
     
     const opStr = operator.replace('*', '×').replace('/', '÷');
     
     return { 
       answer: answer.toString(), 
-      text: `${num1} ${opStr} ${num2}`, // 備用
+      text: `${num1} ${opStr} ${num2}`, 
       num1: num1.toString(),
       op: opStr,
       num2: num2.toString()
     };
   }
 
-  // --- 輔助繪圖函數 (🛠️ 已修復 3D 立體陰影的缺口) ---
   function drawRoundRect(ctx, x, y, width, height, radius, fill, shadowColor = null, isPressed = false) {
     const pressOffset = isPressed ? 4 : 0;
 
-    // 定義一個產生標準圓角矩形路徑的內部函數
     const createPath = (px, py) => {
       ctx.beginPath();
       ctx.moveTo(px + radius, py);
@@ -262,14 +264,12 @@
       ctx.closePath();
     };
 
-    // 繪製底層陰影 (固定的)
     if (shadowColor) {
-      createPath(x, y + 4); // 陰影和主體形狀完全相同，只是往下平移 4px
+      createPath(x, y + 4); 
       ctx.fillStyle = shadowColor;
       ctx.fill();
     }
 
-    // 繪製主體 (會隨按壓位移)
     createPath(x, y + pressOffset);
     ctx.fillStyle = fill; 
     ctx.fill();
@@ -279,7 +279,6 @@
     activeButtons.push({ id, x, y, w, h });
   }
 
-  // 繪製背景數學符號
   function drawBgSymbols(ctx) {
     ctx.save();
     bgSymbols.forEach(sym => {
@@ -287,7 +286,6 @@
       sym.rot += sym.vrot;
       if (sym.y < -50) { sym.y = HEIGHT + 50; sym.x = Math.random() * WIDTH; }
       ctx.globalAlpha = sym.alpha;
-      // 改用主題藍色，讓背景符號更有層次且不干擾黑色題目
       ctx.fillStyle = colors.primary; 
       ctx.font = `bold ${sym.size}px sans-serif`;
       ctx.textAlign = 'center';
@@ -326,9 +324,9 @@
     const gap = 20;
 
     const modes = [
-      { id: 'easy', text: '簡單 (20以內加減)', color: colors.successBg, textCol: colors.success },
-      { id: 'medium', text: '中等 (兩位數混合)', color: colors.warningBg, textCol: colors.warning },
-      { id: 'hard', text: '困難 (三位數混合)', color: colors.dangerBg, textCol: colors.danger }
+      { id: 'easy', text: difficultyTextMap['easy'], color: colors.successBg, textCol: colors.success },
+      { id: 'medium', text: difficultyTextMap['medium'], color: colors.warningBg, textCol: colors.warning },
+      { id: 'hard', text: difficultyTextMap['hard'], color: colors.dangerBg, textCol: colors.danger }
     ];
 
     modes.forEach((mode, index) => {
@@ -359,6 +357,58 @@
     
     ctx.restore();
   }
+
+  // === 新增：準備畫面 ===
+  function drawReady() {
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    drawBgSymbols(ctx);
+
+    ctx.save();
+    ctx.translate(sceneOffsetX, 0);
+
+    ctx.fillStyle = colors.textMain;
+    ctx.font = 'bold 44px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('準備好了嗎？', WIDTH / 2, HEIGHT / 2 - 120);
+
+    // 顯示選擇的難度
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = '18px sans-serif';
+    ctx.fillText('您選擇了：', WIDTH / 2, HEIGHT / 2 - 60);
+    
+    ctx.fillStyle = colors.primary;
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(difficultyTextMap[difficulty], WIDTH / 2, HEIGHT / 2 - 25);
+
+    // 開始按鈕
+    const btnW = 260;
+    const btnH = 75;
+    const btnY = HEIGHT / 2 + 30;
+    const isStartPressed = activePressId === 'real_start';
+
+    drawRoundRect(ctx, (WIDTH - btnW)/2, btnY, btnW, btnH, 20, colors.primary, colors.primaryShadow, isStartPressed);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 26px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('▶ 開始計時', WIDTH / 2, btnY + btnH / 2 + (isStartPressed ? 4 : 0));
+    registerButton('real_start', (WIDTH - btnW)/2, btnY, btnW, btnH);
+
+    // 返回按鈕
+    const backW = 120;
+    const backH = 45;
+    const backY = btnY + btnH + 30;
+    const isBackPressed = activePressId === 'ready_back';
+
+    drawRoundRect(ctx, (WIDTH - backW)/2, backY, backW, backH, 12, colors.surface, colors.surfaceShadow, isBackPressed);
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillText('返回修改', WIDTH / 2, backY + backH / 2 + (isBackPressed ? 4 : 0));
+    registerButton('ready_back', (WIDTH - backW)/2, backY, backW, backH);
+
+    ctx.restore();
+  }
+
 
   function drawPlaying() {
     let shakeX = 0;
@@ -417,7 +467,7 @@
 
     const maxComboVisual = 5;
     const comboProgress = Math.min(streak / maxComboVisual, 1);
-    const meterWidth = 55; // 將原本的 80 縮短為 55，騰出中央空間
+    const meterWidth = 55; 
     drawRoundRect(ctx, 148, 38, meterWidth, 8, 4, colors.surfaceHover);
     if (streak > 0) {
       let comboColor = colors.success;
@@ -446,23 +496,23 @@
     // 題目區 (加上彈性跳出與震動)
     ctx.save();
     ctx.translate(WIDTH / 2 + shakeX, 180);
-    ctx.scale(qScale, qScale); // 應用彈跳縮放
+    ctx.scale(qScale, qScale); 
     ctx.fillStyle = colors.textMain;
     ctx.font = 'bold 64px sans-serif';
     ctx.textBaseline = 'alphabetic';
     
-    // --- 🛠️ 修復點：將運算符號固定在正中央，左右數字向外延伸，以確保完美的視覺中心 ---
+    // 將運算符號固定在正中央
     ctx.textAlign = 'center';
-    ctx.fillText(question.op, 0, 0); // 符號絕對置中
+    ctx.fillText(question.op, 0, 0); 
     
     const opWidth = ctx.measureText(question.op).width;
-    const spacing = 18; // 數字與符號的間距
+    const spacing = 18; 
     
     ctx.textAlign = 'right';
-    ctx.fillText(question.num1, -(opWidth / 2 + spacing), 0); // 左側數字靠右對齊符號
+    ctx.fillText(question.num1, -(opWidth / 2 + spacing), 0); 
     
     ctx.textAlign = 'left';
-    ctx.fillText(question.num2, (opWidth / 2 + spacing), 0);  // 右側數字靠左對齊符號
+    ctx.fillText(question.num2, (opWidth / 2 + spacing), 0);  
     
     ctx.restore();
 
@@ -533,9 +583,8 @@
     ctx.fillText('確認 (Enter)', WIDTH / 2, enterY + (btnH + 10) / 2 + (isEnterPressed ? 4 : 0));
     registerButton('enter', startX, enterY, btnW * 3 + gap * 2, btnH + 10);
 
-    ctx.restore(); // 結束場景位移
+    ctx.restore(); 
 
-    // 繪製煙火粒子特效
     for (let i = particles.length - 1; i >= 0; i--) {
       particles[i].update();
       particles[i].draw(ctx);
@@ -614,7 +663,7 @@
 
   function endGame() {
     changeState('gameover');
-    displayScore = 0; // 重置顯示分數以利滾動特效
+    displayScore = 0; 
     if (score > highScore) {
       highScore = score;
       localStorage.setItem('mathDashCanvasHighScore', highScore);
@@ -629,28 +678,25 @@
     lastTime = timestamp;
     cursorBlink += deltaTime;
 
-    // 處理場景滑動過渡 (Lerp)
     if (Math.abs(sceneOffsetX) > 0.5) {
       sceneOffsetX += (0 - sceneOffsetX) * 0.15;
     } else {
       sceneOffsetX = 0;
     }
 
-    // 處理題目彈跳動畫 (Spring)
     qScaleVel += (1.0 - qScale) * 0.15; 
-    qScaleVel *= 0.75; // 摩擦力
+    qScaleVel *= 0.75; 
     qScale += qScaleVel;
 
-    // 處理結算分數滾動
     if (state === 'gameover' && displayScore < score) {
       displayScore += (score - displayScore) * 0.1;
       if (Math.abs(score - displayScore) < 0.5) displayScore = score;
     }
 
-    activeButtons = []; // 只在非過渡期接受點擊，確保座標精準
+    activeButtons = []; 
 
     if (state === 'playing') {
-      if (timeLeft > 0 && sceneOffsetX === 0) { // 過渡期暫停計時
+      if (timeLeft > 0 && sceneOffsetX === 0) { 
         timeLeft -= deltaTime / 1000;
         if (timeLeft <= 0) {
           timeLeft = 0;
@@ -661,6 +707,8 @@
       drawPlaying();
     } else if (state === 'menu') {
       drawMenu();
+    } else if (state === 'ready') {
+      drawReady(); // 渲染準備畫面
     } else if (state === 'gameover') {
       drawGameOver();
     }
@@ -669,8 +717,12 @@
   }
 
   // --- 邏輯處理 ---
-  function startGame(diff) {
+  function prepareGame(diff) {
     difficulty = diff;
+    changeState('ready'); // 進入準備畫面
+  }
+
+  function startGame() {
     score = 0;
     timeLeft = 30; 
     streak = 0;
@@ -679,9 +731,9 @@
     userInput = '';
     particles = []; 
     floatingTexts = [];
-    question = generateQuestion(diff);
+    question = generateQuestion(difficulty);
     feedbackTimer = 0;
-    changeState('playing');
+    changeState('playing'); // 正式開始遊戲
   }
 
   function handleInput(val) {
@@ -730,7 +782,7 @@
   // --- 互動事件監聽 ---
   function handlePointerDown(e) {
     if (e.type === 'touchstart') e.preventDefault(); 
-    if (Math.abs(sceneOffsetX) > 5) return; // 轉場中禁止點擊
+    if (Math.abs(sceneOffsetX) > 5) return; 
 
     const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
     const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
@@ -744,17 +796,20 @@
 
     for (const btn of activeButtons) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-        activePressId = btn.id; // 設定按下的按鈕以觸發3D動效
+        activePressId = btn.id; 
         
-        // 觸發實際邏輯
         if (btn.id.startsWith('start_')) {
-          startGame(btn.id.split('_')[1]);
+          prepareGame(btn.id.split('_')[1]); // 修改為進入準備畫面
+        } else if (btn.id === 'real_start') {
+          startGame(); // 在準備畫面點擊開始
+        } else if (btn.id === 'ready_back') {
+          changeState('menu'); // 在準備畫面點擊返回
         } else if (btn.id.startsWith('key_')) {
           handleInput(btn.id.split('_')[1]);
         } else if (btn.id === 'enter') {
           checkAnswer();
         } else if (btn.id === 'restart') {
-          startGame(difficulty);
+          prepareGame(difficulty); // 重新開始也會先進入準備畫面
         } else if (btn.id === 'home' || btn.id === 'quit') {
           changeState('menu');
         }
@@ -764,7 +819,7 @@
   }
 
   function handlePointerUp() {
-    activePressId = null; // 釋放按鍵，恢復凸起狀態
+    activePressId = null; 
   }
 
   canvas.addEventListener('mousedown', handlePointerDown);
@@ -774,10 +829,21 @@
   window.addEventListener('touchend', handlePointerUp);
 
   window.addEventListener('keydown', (e) => {
-    if (state !== 'playing' || sceneOffsetX !== 0) return;
+    if (Math.abs(sceneOffsetX) > 0) return;
+
+    // 在準備畫面時，按 Enter 可以直接開始
+    if (state === 'ready' && e.key === 'Enter') {
+      activePressId = `real_start`;
+      setTimeout(() => activePressId = null, 100);
+      startGame();
+      return;
+    }
+
+    if (state !== 'playing') return;
+
     if (e.key >= '0' && e.key <= '9') {
       handleInput(e.key);
-      activePressId = `key_${e.key}`; // 鍵盤連動視覺特效
+      activePressId = `key_${e.key}`; 
       setTimeout(() => activePressId = null, 100);
     } else if (e.key === 'Backspace') {
       handleInput('⌫');
